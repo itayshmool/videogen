@@ -1,0 +1,25 @@
+[project]
+name = "videogen"
+version = "0.1.0"
+description = "Autonomous social video clip generator for product pages"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "browser-use @ file:///Users/itays/dev/tools/browser-use",
+    "anthropic>=0.42.0",
+    "google-genai>=1.0.0",
+    "Pillow>=11.0.0",
+    "ffmpeg-python>=0.2.0",
+    "pydantic>=2.0.0",
+    "typer>=0.15.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+videogen = "videogen.cli:app"
+
+[build-system]
+requires = ["setuptools>=75.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
