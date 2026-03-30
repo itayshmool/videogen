@@ -7,7 +7,7 @@ from pathlib import Path
 
 import typer
 
-from videogen.config import OUTPUT_DIR, TMP_DIR
+from videogen.config import OUTPUT_DIR, PROFILE_DIR, TMP_DIR
 
 app = typer.Typer(
     name="videogen",
@@ -32,6 +32,7 @@ async def _run_pipeline(
     headless: bool,
     login: bool,
     keep_tmp: bool,
+    profile_dir: Path = PROFILE_DIR,
 ) -> Path:
     from videogen.assets import prepare_assets
     from videogen.browser import browse_product
@@ -48,7 +49,9 @@ async def _run_pipeline(
 
     # Step 1: Browse
     logger.info("Browsing %s ...", url)
-    browse_result = await browse_product(url, headless=headless, login=login)
+    browse_result = await browse_product(
+        url, headless=headless, login=login, profile_dir=profile_dir,
+    )
     logger.info(
         "Captured %d screenshots for '%s'",
         len(browse_result.screenshots),
@@ -87,11 +90,12 @@ def generate(
     output_dir: Path = typer.Option(OUTPUT_DIR, "--output", "-o", help="Output directory"),
     headless: bool = typer.Option(True, "--headless/--no-headless", help="Run browser headlessly"),
     login: bool = typer.Option(False, "--login", "-l", help="Pause for manual login before capturing"),
+    profile_dir: Path = typer.Option(PROFILE_DIR, "--profile", "-p", help="Browser profile directory (persists login sessions)"),
     keep_tmp: bool = typer.Option(False, "--keep-tmp", help="Keep temp files after generation"),
 ) -> None:
     """Generate a social video clip from a product page URL."""
     output_path = asyncio.run(
-        _run_pipeline(url, scenes, duration, music, output_dir, headless, login, keep_tmp)
+        _run_pipeline(url, scenes, duration, music, output_dir, headless, login, keep_tmp, profile_dir)
     )
     typer.echo(f"\nVideo: {output_path}")
 

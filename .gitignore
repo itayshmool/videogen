@@ -11,4 +11,5 @@ venv/
 output/*.mp4
 output/*.png
 .tmp/
+.browser-profile/
 *.log

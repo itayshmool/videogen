@@ -1,48 +1,51 @@
 """Tests for the browser module — login flow and browsing logic."""
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from videogen.browser import (
     BROWSE_TASK,
-    BROWSE_TASK_NO_LOGIN,
     ProductInfo,
-    _make_login_step_callback,
+    _make_login_pause_callback,
     browse_product,
 )
 
 
 # ---------------------------------------------------------------------------
-# _make_login_step_callback
+# _make_login_pause_callback
 # ---------------------------------------------------------------------------
 
 
-class TestLoginStepCallback:
+class TestLoginPauseCallback:
     def test_callback_factory_returns_callable(self):
-        cb = _make_login_step_callback("https://example.com")
+        cb = _make_login_pause_callback("https://example.com")
         assert callable(cb)
 
     @pytest.mark.asyncio
     async def test_callback_does_not_pause_on_step_0(self):
-        cb = _make_login_step_callback("https://example.com")
+        cb = _make_login_pause_callback("https://example.com")
+        # Step 0 should not trigger the login pause
         await cb(MagicMock(), MagicMock(), 0)
 
     @pytest.mark.asyncio
     async def test_callback_pauses_on_step_1(self):
-        cb = _make_login_step_callback("https://example.com")
+        cb = _make_login_pause_callback("https://example.com")
         mock_loop = MagicMock()
         mock_loop.run_in_executor = AsyncMock(return_value=None)
-        with patch("asyncio.get_event_loop", return_value=mock_loop):
+        with patch("asyncio.get_event_loop", return_value=mock_loop), \
+             patch("builtins.print"):
             await cb(MagicMock(), MagicMock(), 1)
         mock_loop.run_in_executor.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_callback_pauses_only_once(self):
-        cb = _make_login_step_callback("https://example.com")
+        cb = _make_login_pause_callback("https://example.com")
         mock_loop = MagicMock()
         mock_loop.run_in_executor = AsyncMock(return_value=None)
-        with patch("asyncio.get_event_loop", return_value=mock_loop):
+        with patch("asyncio.get_event_loop", return_value=mock_loop), \
+             patch("builtins.print"):
             await cb(MagicMock(), MagicMock(), 1)
             await cb(MagicMock(), MagicMock(), 1)
             await cb(MagicMock(), MagicMock(), 2)
@@ -59,14 +62,14 @@ BROWSE_PATCHES = {
     "llm": "videogen.browser._default_llm",
     "profile": "videogen.browser.BrowserProfile",
     "tools": "videogen.browser.Tools",
-    "session": "videogen.browser.BrowserSession",  # prevents fallback browser launch
+    "session": "videogen.browser.BrowserSession",
 }
 
 
 def _mock_session():
     """An AsyncMock BrowserSession so await session.start() etc. work."""
     s = AsyncMock()
-    s.get_current_page = AsyncMock(return_value=None)  # no page → skip fallback goto
+    s.get_current_page = AsyncMock(return_value=None)
     return s
 
 
@@ -86,7 +89,7 @@ def _mock_agent(final_result=None):
 
 class TestBrowseProductTaskSelection:
     @pytest.mark.asyncio
-    async def test_login_true_uses_login_task_with_url(self):
+    async def test_login_true_includes_url_and_sets_callback(self, tmp_path):
         agent_kwargs = {}
 
         with patch(BROWSE_PATCHES["agent"]) as MockAgent, \
@@ -100,14 +103,13 @@ class TestBrowseProductTaskSelection:
                 return _mock_agent()
             MockAgent.side_effect = capture
 
-            await browse_product("https://example.com", login=True, headless=False)
+            await browse_product("https://example.com", login=True, headless=False, profile_dir=tmp_path)
 
         assert "https://example.com" in agent_kwargs["task"]
-        assert "Analyze the product page" in agent_kwargs["task"]
         assert agent_kwargs["register_new_step_callback"] is not None
 
     @pytest.mark.asyncio
-    async def test_login_false_uses_no_login_task(self):
+    async def test_login_false_has_no_callback(self, tmp_path):
         agent_kwargs = {}
 
         with patch(BROWSE_PATCHES["agent"]) as MockAgent, \
@@ -121,9 +123,9 @@ class TestBrowseProductTaskSelection:
                 return _mock_agent()
             MockAgent.side_effect = capture
 
-            await browse_product("https://example.com", login=False)
+            await browse_product("https://example.com", login=False, profile_dir=tmp_path)
 
-        assert "Visit https://example.com" in agent_kwargs["task"]
+        assert "https://example.com" in agent_kwargs["task"]
         assert agent_kwargs["register_new_step_callback"] is None
 
 
@@ -134,22 +136,23 @@ class TestBrowseProductTaskSelection:
 
 class TestBrowseProductHeadless:
     @pytest.mark.asyncio
-    async def test_login_forces_headless_false(self):
-        profile_kwargs = {}
+    async def test_login_forces_headless_false(self, tmp_path):
+        all_calls = []
 
         with patch(BROWSE_PATCHES["agent"], return_value=_mock_agent()), \
              patch(BROWSE_PATCHES["llm"], return_value=MagicMock()), \
              patch(BROWSE_PATCHES["profile"]) as MockProfile, \
              patch(BROWSE_PATCHES["tools"], return_value=MagicMock()), \
              patch(BROWSE_PATCHES["session"], return_value=_mock_session()):
-            MockProfile.side_effect = lambda **kw: (profile_kwargs.update(kw), MagicMock())[1]
+            MockProfile.side_effect = lambda **kw: (all_calls.append(dict(kw)), MagicMock())[1]
 
-            await browse_product("https://example.com", login=True, headless=True)
+            await browse_product("https://example.com", login=True, headless=True, profile_dir=tmp_path)
 
-        assert profile_kwargs["headless"] is False
+        # First BrowserProfile call is for the agent (should be headless=False)
+        assert all_calls[0]["headless"] is False
 
     @pytest.mark.asyncio
-    async def test_no_login_respects_headless_flag(self):
+    async def test_no_login_respects_headless_flag(self, tmp_path):
         profile_kwargs = {}
 
         with patch(BROWSE_PATCHES["agent"], return_value=_mock_agent()), \
@@ -159,9 +162,24 @@ class TestBrowseProductHeadless:
              patch(BROWSE_PATCHES["session"], return_value=_mock_session()):
             MockProfile.side_effect = lambda **kw: (profile_kwargs.update(kw), MagicMock())[1]
 
-            await browse_product("https://example.com", login=False, headless=True)
+            await browse_product("https://example.com", login=False, headless=True, profile_dir=tmp_path)
 
         assert profile_kwargs["headless"] is True
+
+    @pytest.mark.asyncio
+    async def test_passes_user_data_dir(self, tmp_path):
+        profile_kwargs = {}
+
+        with patch(BROWSE_PATCHES["agent"], return_value=_mock_agent()), \
+             patch(BROWSE_PATCHES["llm"], return_value=MagicMock()), \
+             patch(BROWSE_PATCHES["profile"]) as MockProfile, \
+             patch(BROWSE_PATCHES["tools"], return_value=MagicMock()), \
+             patch(BROWSE_PATCHES["session"], return_value=_mock_session()):
+            MockProfile.side_effect = lambda **kw: (profile_kwargs.update(kw), MagicMock())[1]
+
+            await browse_product("https://example.com", login=False, profile_dir=tmp_path)
+
+        assert profile_kwargs["user_data_dir"] == str(tmp_path)
 
 
 # ---------------------------------------------------------------------------
@@ -171,7 +189,7 @@ class TestBrowseProductHeadless:
 
 class TestBrowseProductOutputParsing:
     @pytest.mark.asyncio
-    async def test_parses_valid_product_info(self):
+    async def test_parses_valid_product_info(self, tmp_path):
         product_json = '{"product_name":"TestProd","tagline":"Best thing","features":["Fast","Easy"],"section_descriptions":["hero shot"]}'
 
         with patch(BROWSE_PATCHES["agent"], return_value=_mock_agent(product_json)), \
@@ -179,32 +197,32 @@ class TestBrowseProductOutputParsing:
              patch(BROWSE_PATCHES["profile"], return_value=MagicMock()), \
              patch(BROWSE_PATCHES["tools"], return_value=MagicMock()), \
              patch(BROWSE_PATCHES["session"], return_value=_mock_session()):
-            result = await browse_product("https://example.com")
+            result = await browse_product("https://example.com", profile_dir=tmp_path)
 
         assert result.product_name == "TestProd"
         assert result.tagline == "Best thing"
         assert result.features == ["Fast", "Easy"]
 
     @pytest.mark.asyncio
-    async def test_handles_none_output(self):
+    async def test_handles_none_output(self, tmp_path):
         with patch(BROWSE_PATCHES["agent"], return_value=_mock_agent(None)), \
              patch(BROWSE_PATCHES["llm"], return_value=MagicMock()), \
              patch(BROWSE_PATCHES["profile"], return_value=MagicMock()), \
              patch(BROWSE_PATCHES["tools"], return_value=MagicMock()), \
              patch(BROWSE_PATCHES["session"], return_value=_mock_session()):
-            result = await browse_product("https://example.com")
+            result = await browse_product("https://example.com", profile_dir=tmp_path)
 
         assert result.product_name == ""
         assert result.features == []
 
     @pytest.mark.asyncio
-    async def test_handles_malformed_json(self):
+    async def test_handles_malformed_json(self, tmp_path):
         with patch(BROWSE_PATCHES["agent"], return_value=_mock_agent("not json")), \
              patch(BROWSE_PATCHES["llm"], return_value=MagicMock()), \
              patch(BROWSE_PATCHES["profile"], return_value=MagicMock()), \
              patch(BROWSE_PATCHES["tools"], return_value=MagicMock()), \
              patch(BROWSE_PATCHES["session"], return_value=_mock_session()):
-            result = await browse_product("https://example.com")
+            result = await browse_product("https://example.com", profile_dir=tmp_path)
 
         assert result.product_name == ""
         assert result.url == "https://example.com"

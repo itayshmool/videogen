@@ -10,7 +10,7 @@ from browser_use.browser.session import BrowserSession
 from browser_use.tools.service import Tools
 from pydantic import BaseModel
 
-from videogen.config import TMP_DIR
+from videogen.config import PROFILE_DIR, TMP_DIR
 from videogen.models import BrowseResult
 
 
@@ -40,23 +40,7 @@ class ProductInfo(BaseModel):
 
 
 BROWSE_TASK = """
-Analyze the product page you are currently on.
-
-Your goal:
-1. Scroll slowly through the ENTIRE page from top to bottom
-2. At each major section (hero/header, features, pricing, testimonials, CTA/footer),
-   PAUSE and call the `save_screenshot` action with a descriptive label
-3. After scrolling through the full page, return structured output with:
-   - product_name: the product/company name
-   - tagline: the main headline or tagline
-   - features: a list of 3-5 key features or selling points
-   - section_descriptions: a short description of what each screenshot shows
-
-Take at least 4 screenshots and at most 8. Cover diverse sections of the page.
-"""
-
-BROWSE_TASK_NO_LOGIN = """
-Visit {url} and analyze the product page.
+Analyze the product page at {url}.
 
 Your goal:
 1. Scroll slowly through the ENTIRE page from top to bottom
@@ -72,8 +56,13 @@ Take at least 4 screenshots and at most 8. Cover diverse sections of the page.
 """
 
 
-def _make_login_step_callback(url: str):
-    """Create a step callback that pauses for user login after the agent navigates."""
+def _make_login_pause_callback(url: str):
+    """Create a step callback that pauses once for the user to log in.
+
+    The callback fires after the agent's first LLM step, which is after
+    initial_actions (URL navigation) have already completed. This ensures
+    the page is loaded before the user is prompted.
+    """
     login_done = False
 
     async def on_step(state, output, step_num):
@@ -86,22 +75,33 @@ def _make_login_step_callback(url: str):
             print("  When you're done, come back here and press ENTER")
             print("=" * 60 + "\n")
             await asyncio.get_event_loop().run_in_executor(None, input)
-            logger.info("User login complete, agent taking over...")
+            logger.info("User login complete, agent resuming...")
 
     return on_step
 
 
 async def browse_product(
-    url: str, llm=None, headless: bool = True, login: bool = False,
+    url: str,
+    llm=None,
+    headless: bool = True,
+    login: bool = False,
+    profile_dir: Path | None = None,
 ) -> BrowseResult:
     """Browse a product URL and capture screenshots of key sections.
 
     Uses Gemini as the default LLM if none is provided.
-    If login=True, the agent navigates to the URL, then pauses for user login.
-    Returns a BrowseResult with extracted text and screenshot paths.
+
+    If login=True, the browser opens visibly, navigates to the URL via the
+    agent's initial_actions, then pauses so the user can log in. The browser
+    profile is persisted to profile_dir so subsequent runs reuse the session
+    without needing to log in again.
     """
     if llm is None:
         llm = _default_llm()
+    if profile_dir is None:
+        profile_dir = PROFILE_DIR
+    profile_dir.mkdir(parents=True, exist_ok=True)
+
     screenshots_dir = TMP_DIR / "screenshots"
     screenshots_dir.mkdir(parents=True, exist_ok=True)
 
@@ -118,15 +118,13 @@ async def browse_product(
         screenshot_paths.append(path)
         return f"Screenshot saved: {path.name}"
 
-    browser_profile = BrowserProfile(headless=False if login else headless)
+    browser_profile = BrowserProfile(
+        headless=False if login else headless,
+        user_data_dir=str(profile_dir),
+    )
 
-    if login:
-        # Agent navigates to the URL first, then pauses for user to log in
-        task = f"Go to {url} and wait.\n\n" + BROWSE_TASK
-        step_callback = _make_login_step_callback(url)
-    else:
-        task = BROWSE_TASK_NO_LOGIN.format(url=url)
-        step_callback = None
+    task = BROWSE_TASK.format(url=url)
+    step_callback = _make_login_pause_callback(url) if login else None
 
     agent = Agent(
         task=task,
@@ -167,7 +165,11 @@ async def browse_product(
     if not screenshot_paths:
         logger.warning("No screenshots captured by agent, taking fallback screenshot")
         fallback = screenshots_dir / "00_fullpage.png"
-        session = BrowserSession(browser_profile=browser_profile)
+        fallback_profile = BrowserProfile(
+            headless=headless,
+            user_data_dir=str(profile_dir),
+        )
+        session = BrowserSession(browser_profile=fallback_profile)
         await session.start()
         page = await session.get_current_page()
         if page:
