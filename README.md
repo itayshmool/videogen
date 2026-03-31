@@ -2,6 +2,20 @@
 
 Autonomous social video clip generator. Point it at a product URL, and it browses the page, captures screenshots, writes a script, and composes a short video with transitions and effects.
 
+## Demo
+
+https://github.com/user-attachments/assets/demo.mp4
+
+### Screenshots captured by the AI agent
+
+| Dashboard | Lesson | Interactive |
+|-----------|--------|-------------|
+| ![Dashboard](docs/media/screenshot_dashboard.png) | ![Lesson](docs/media/screenshot_lesson.png) | ![Interactive](docs/media/screenshot_interactive.png) |
+
+### Generated frame with text overlay
+
+![Frame example](docs/media/frame_example.png)
+
 ## Setup
 
 Requires Python 3.11+ and FFmpeg.
