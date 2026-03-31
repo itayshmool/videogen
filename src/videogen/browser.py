@@ -39,6 +39,18 @@ class ProductInfo(BaseModel):
     section_descriptions: list[str]
 
 
+SCREENSHOT_INSTRUCTIONS = """
+
+SCREENSHOT INSTRUCTIONS:
+- At each important view, call the `save_screenshot` action with a descriptive label
+- Take at least 4 screenshots and at most 8. Cover diverse views.
+- After you are done, return structured output with:
+  - product_name: the product/company name
+  - tagline: the main headline or tagline
+  - features: a list of 3-5 key features or selling points
+  - section_descriptions: a short description of what each screenshot shows
+"""
+
 BROWSE_TASK = """
 Analyze the product page at {url}.
 
@@ -53,6 +65,19 @@ Your goal:
    - section_descriptions: a short description of what each screenshot shows
 
 Take at least 4 screenshots and at most 8. Cover diverse sections of the page.
+"""
+
+LOGIN_TASK_PREFIX = """FIRST, you must log in before doing anything else:
+1. Navigate to {login_url}
+2. Find the login form on the page
+3. Enter the value of x_username into the username/email field
+4. Enter the value of x_password into the password field
+5. Submit the login form (click the login/sign-in button)
+6. Wait for the page to finish loading after login
+7. Confirm you are now logged in (no login form visible)
+
+AFTER login is confirmed, proceed with the main task below:
+
 """
 
 
@@ -86,6 +111,10 @@ async def browse_product(
     headless: bool = True,
     login: bool = False,
     profile_dir: Path | None = None,
+    login_url: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+    custom_task: str | None = None,
 ) -> BrowseResult:
     """Browse a product URL and capture screenshots of key sections.
 
@@ -118,13 +147,28 @@ async def browse_product(
         screenshot_paths.append(path)
         return f"Screenshot saved: {path.name}"
 
+    has_auto_login = all([login_url, username, password])
+
     browser_profile = BrowserProfile(
-        headless=False if login else headless,
+        headless=False if (login and not has_auto_login) else headless,
         user_data_dir=str(profile_dir),
+        wait_between_actions=1.0,
+        minimum_wait_page_load_time=1.0,
+        wait_for_network_idle_page_load_time=2.0,
     )
 
-    task = BROWSE_TASK.format(url=url)
-    step_callback = _make_login_pause_callback(url) if login else None
+    if custom_task:
+        task = custom_task + SCREENSHOT_INSTRUCTIONS
+    else:
+        task = BROWSE_TASK.format(url=url)
+    step_callback = None
+    sensitive_data = None
+
+    if has_auto_login:
+        task = LOGIN_TASK_PREFIX.format(login_url=login_url) + task
+        sensitive_data = {"x_username": username, "x_password": password}
+    elif login:
+        step_callback = _make_login_pause_callback(url)
 
     agent = Agent(
         task=task,
@@ -135,6 +179,7 @@ async def browse_product(
         use_vision=True,
         max_actions_per_step=3,
         register_new_step_callback=step_callback,
+        sensitive_data=sensitive_data,
     )
 
     result = await agent.run(max_steps=30)

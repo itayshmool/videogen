@@ -5,6 +5,7 @@ import logging
 import os
 
 from google import genai
+from google.genai import types
 
 from videogen.models import (
     BrowseResult,
@@ -24,9 +25,7 @@ Your style:
 - Hook viewers in the first 2 seconds with a bold statement or question
 - Keep text SHORT — max 6-8 words per headline, 10-12 words per subtext
 - Use power words: "instantly", "effortlessly", "finally", "stop doing X"
-- End with a clear call-to-action
-
-You output valid JSON matching the required schema."""
+- End with a clear call-to-action"""
 
 USER_PROMPT = """Create a video script for this product:
 
@@ -38,19 +37,33 @@ Key Features:
 
 Number of screenshots available: {num_screenshots}
 
-Generate a JSON video script with:
-- "product_name": the product name
-- "hook": attention-grabbing text for the first 3 seconds (bold, short)
-- "scenes": array of {num_scenes} scenes, each with:
-  - "screenshot_index": which screenshot to use (0-indexed, max {max_index})
-  - "headline": short bold text (max 8 words)
-  - "subtext": supporting text (max 12 words, or empty string)
-  - "duration": seconds (3-5)
-  - "transition": one of "crossfade", "fade_black", "slide_left"
-  - "ken_burns": one of "zoom_in", "zoom_out", "pan_left", "pan_right"
-- "cta": call-to-action text for the final frame
+Generate a video script with {num_scenes} scenes.
+Each scene should use a screenshot_index between 0 and {max_index}."""
 
-Return ONLY valid JSON, no markdown fences or extra text."""
+RESPONSE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "product_name": {"type": "string"},
+        "hook": {"type": "string", "description": "Attention-grabbing text for the first 3 seconds"},
+        "scenes": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "screenshot_index": {"type": "integer"},
+                    "headline": {"type": "string", "description": "Short bold text, max 8 words"},
+                    "subtext": {"type": "string", "description": "Supporting text, max 12 words"},
+                    "duration": {"type": "number"},
+                    "transition": {"type": "string", "enum": ["crossfade", "fade_black", "slide_left"]},
+                    "ken_burns": {"type": "string", "enum": ["zoom_in", "zoom_out", "pan_left", "pan_right"]},
+                },
+                "required": ["screenshot_index", "headline", "subtext", "duration", "transition", "ken_burns"],
+            },
+        },
+        "cta": {"type": "string", "description": "Call-to-action text for the final frame"},
+    },
+    "required": ["product_name", "hook", "scenes", "cta"],
+}
 
 
 async def generate_script(
@@ -81,18 +94,13 @@ async def generate_script(
     response = await client.aio.models.generate_content(
         model="gemini-2.5-flash",
         contents=f"{SYSTEM_PROMPT}\n\n{user_content}",
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=RESPONSE_SCHEMA,
+        ),
     )
 
-    raw = response.text.strip()
-
-    # Strip markdown fences if present
-    if raw.startswith("```"):
-        raw = raw.split("\n", 1)[1]
-        if raw.endswith("```"):
-            raw = raw[: raw.rfind("```")]
-        raw = raw.strip()
-
-    data = json.loads(raw)
+    data = json.loads(response.text)
 
     # Map scenes from LLM output to our model
     scenes: list[Scene] = []

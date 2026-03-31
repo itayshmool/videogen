@@ -45,6 +45,7 @@ class VideoConfig(BaseModel):
     output_dir: Path = Path("output")
     font_path: Path | None = None
     music_path: Path | None = None
+    crop: bool = True
 
 
 class BrowseResult(BaseModel):

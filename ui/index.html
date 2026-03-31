@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>videogen</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-deep: #0a0a0c;
+    --bg-surface: #111114;
+    --bg-raised: #1a1a1f;
+    --bg-input: #15151a;
+    --border: #2a2a32;
+    --border-focus: #4a4a5a;
+    --text-primary: #e8e8ed;
+    --text-secondary: #8888a0;
+    --text-muted: #55556a;
+    --accent: #e85d3a;
+    --accent-hover: #f06a48;
+    --accent-glow: rgba(232, 93, 58, 0.15);
+    --success: #3ddc84;
+    --error: #ff5555;
+    --warning: #f0a030;
+    --font-mono: 'JetBrains Mono', monospace;
+    --font-sans: 'DM Sans', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg-deep);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-surface);
+  }
+
+  .logo {
+    font-family: var(--font-mono);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    color: var(--text-primary);
+  }
+
+  .logo span { color: var(--accent); }
+
+  .header-meta {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+  }
+
+  /* Main layout */
+  .main {
+    display: grid;
+    grid-template-columns: 420px 1fr;
+    min-height: calc(100vh - 65px);
+  }
+
+  /* Sidebar / Config panel */
+  .sidebar {
+    border-right: 1px solid var(--border);
+    background: var(--bg-surface);
+    overflow-y: auto;
+    padding: 0;
+  }
+
+  .section {
+    border-bottom: 1px solid var(--border);
+    padding: 24px;
+  }
+
+  .section-header {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .section-header::before {
+    content: '';
+    width: 3px;
+    height: 10px;
+    background: var(--accent);
+    border-radius: 1px;
+  }
+
+  /* Form elements */
+  label {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    margin-bottom: 6px;
+    letter-spacing: 0.3px;
+  }
+
+  input[type="text"],
+  input[type="password"],
+  input[type="number"],
+  textarea {
+    width: 100%;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  input:focus, textarea:focus {
+    border-color: var(--border-focus);
+    box-shadow: 0 0 0 3px rgba(74, 74, 90, 0.15);
+  }
+
+  input::placeholder, textarea::placeholder {
+    color: var(--text-muted);
+    font-weight: 300;
+  }
+
+  textarea {
+    resize: vertical;
+    min-height: 72px;
+    line-height: 1.5;
+  }
+
+  .field { margin-bottom: 14px; }
+  .field:last-child { margin-bottom: 0; }
+
+  .field-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
+  /* Toggle switch */
+  .toggle-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 0;
+  }
+
+  .toggle-label {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  .toggle {
+    position: relative;
+    width: 40px;
+    height: 22px;
+    cursor: pointer;
+  }
+
+  .toggle input { opacity: 0; width: 0; height: 0; }
+
+  .toggle .slider {
+    position: absolute;
+    inset: 0;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 11px;
+    transition: background 0.2s, border-color 0.2s;
+  }
+
+  .toggle .slider::before {
+    content: '';
+    position: absolute;
+    height: 16px;
+    width: 16px;
+    left: 2px;
+    bottom: 2px;
+    background: var(--text-secondary);
+    border-radius: 50%;
+    transition: transform 0.2s, background 0.2s;
+  }
+
+  .toggle input:checked + .slider {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .toggle input:checked + .slider::before {
+    transform: translateX(18px);
+    background: white;
+  }
+
+  /* Orientation selector */
+  .orient-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .orient-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-input);
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-secondary);
+  }
+
+  .orient-btn:hover { border-color: var(--border-focus); }
+
+  .orient-btn.active {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+    color: var(--text-primary);
+  }
+
+  .orient-icon {
+    width: 24px;
+    height: 32px;
+    border: 2px solid currentColor;
+    border-radius: 3px;
+  }
+
+  .orient-btn:last-child .orient-icon {
+    width: 32px;
+    height: 24px;
+  }
+
+  /* Generate button */
+  .generate-btn {
+    width: 100%;
+    padding: 14px 24px;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent);
+    color: white;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
+  }
+
+  .generate-btn:hover:not(:disabled) {
+    background: var(--accent-hover);
+    box-shadow: 0 4px 20px var(--accent-glow);
+  }
+
+  .generate-btn:active:not(:disabled) { transform: scale(0.98); }
+
+  .generate-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .generate-btn.running {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    animation: pulse-border 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-border {
+    0%, 100% { border-color: var(--border); }
+    50% { border-color: var(--accent); }
+  }
+
+  /* Content area */
+  .content {
+    background: var(--bg-deep);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-surface);
+    padding: 0 24px;
+  }
+
+  .tab {
+    padding: 14px 20px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color 0.2s, border-color 0.2s;
+    background: none;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+  }
+
+  .tab:hover { color: var(--text-secondary); }
+  .tab.active {
+    color: var(--text-primary);
+    border-bottom-color: var(--accent);
+  }
+
+  /* Tab content */
+  .tab-panel { display: none; flex: 1; overflow: hidden; }
+  .tab-panel.active { display: flex; flex-direction: column; }
+
+  /* Log terminal */
+  .log-terminal {
+    flex: 1;
+    background: var(--bg-deep);
+    padding: 20px 24px;
+    overflow-y: auto;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    line-height: 1.8;
+  }
+
+  .log-line {
+    display: flex;
+    gap: 8px;
+    opacity: 0;
+    animation: log-in 0.2s ease forwards;
+  }
+
+  @keyframes log-in {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .log-time {
+    color: var(--text-muted);
+    flex-shrink: 0;
+    font-size: 11px;
+  }
+
+  .log-level {
+    flex-shrink: 0;
+    font-weight: 600;
+    font-size: 11px;
+    width: 50px;
+  }
+
+  .log-level.INFO { color: var(--text-secondary); }
+  .log-level.WARNING { color: var(--warning); }
+  .log-level.ERROR { color: var(--error); }
+
+  .log-msg { color: var(--text-primary); word-break: break-all; }
+
+  .log-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    gap: 8px;
+  }
+
+  .log-empty .hint { font-size: 11px; opacity: 0.6; }
+
+  /* Video gallery */
+  .gallery {
+    flex: 1;
+    padding: 24px;
+    overflow-y: auto;
+  }
+
+  .gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+  }
+
+  .video-card {
+    background: var(--bg-raised);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+
+  .video-card:hover {
+    border-color: var(--border-focus);
+    transform: translateY(-2px);
+  }
+
+  .video-card video {
+    width: 100%;
+    display: block;
+    background: #000;
+    max-height: 400px;
+    object-fit: contain;
+  }
+
+  .video-card-info {
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .video-card-name {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .video-card-size {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+    margin-left: 12px;
+  }
+
+  .gallery-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    gap: 8px;
+  }
+
+  /* Screenshots */
+  .screenshots-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 12px;
+    padding: 24px;
+    overflow-y: auto;
+    flex: 1;
+  }
+
+  .screenshot-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--bg-raised);
+    transition: border-color 0.2s;
+  }
+
+  .screenshot-card:hover { border-color: var(--border-focus); }
+
+  .screenshot-card img {
+    width: 100%;
+    display: block;
+    object-fit: cover;
+  }
+
+  .screenshot-card .name {
+    padding: 8px 12px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  /* Status bar */
+  .status-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 24px;
+    border-top: 1px solid var(--border);
+    background: var(--bg-surface);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-muted);
+  }
+
+  .status-dot.running {
+    background: var(--accent);
+    animation: blink 1.2s ease-in-out infinite;
+  }
+
+  .status-dot.done { background: var(--success); }
+  .status-dot.error { background: var(--error); }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border-focus); }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .main {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto 1fr;
+    }
+    .sidebar { border-right: none; border-bottom: 1px solid var(--border); max-height: 50vh; overflow-y: auto; }
+  }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="logo">video<span>gen</span></div>
+  <div class="header-meta">autonomous video pipeline</div>
+</header>
+
+<div class="main">
+  <!-- Sidebar: Configuration -->
+  <aside class="sidebar">
+
+    <div class="section">
+      <div class="section-header">Target</div>
+      <div class="field">
+        <label>Product URL</label>
+        <input type="text" id="url" placeholder="https://example.com" />
+      </div>
+      <div class="field">
+        <label>Browsing Instructions</label>
+        <textarea id="task" placeholder="Custom instructions for the AI agent (optional)..."></textarea>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">Authentication</div>
+      <div class="field">
+        <label>Login URL</label>
+        <input type="text" id="login_url" placeholder="https://example.com/login" />
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Username</label>
+          <input type="text" id="username" placeholder="user@email.com" />
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="password" placeholder="..." />
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-header">Video Settings</div>
+      <div class="field">
+        <label>Orientation</label>
+        <div class="orient-group">
+          <button class="orient-btn" data-orient="vertical" onclick="setOrient('vertical')">
+            <div class="orient-icon"></div>
+            9:16
+          </button>
+          <button class="orient-btn active" data-orient="landscape" onclick="setOrient('landscape')">
+            <div class="orient-icon"></div>
+            16:9
+          </button>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field">
+          <label>Max Scenes</label>
+          <input type="number" id="scenes" value="5" min="1" max="10" />
+        </div>
+        <div class="field">
+          <label>Duration (sec)</label>
+          <input type="number" id="duration" value="4" min="2" max="10" step="0.5" />
+        </div>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">Headless Browser</span>
+        <label class="toggle">
+          <input type="checkbox" id="headless" />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <div class="section">
+      <button class="generate-btn" id="generateBtn" onclick="startGeneration()">
+        Generate Video
+      </button>
+    </div>
+
+  </aside>
+
+  <!-- Content area -->
+  <div class="content">
+    <div class="tabs">
+      <button class="tab active" data-tab="logs" onclick="switchTab('logs')">Logs</button>
+      <button class="tab" data-tab="videos" onclick="switchTab('videos')">Videos</button>
+      <button class="tab" data-tab="screenshots" onclick="switchTab('screenshots')">Screenshots</button>
+    </div>
+
+    <div class="tab-panel active" id="panel-logs">
+      <div class="log-terminal" id="logTerminal">
+        <div class="log-empty">
+          <span>No active generation</span>
+          <span class="hint">Configure settings and hit Generate</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="panel-videos">
+      <div class="gallery" id="videoGallery">
+        <div class="gallery-empty">Loading...</div>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="panel-screenshots">
+      <div class="screenshots-grid" id="screenshotGrid">
+        <div class="gallery-empty">Screenshots appear after generation</div>
+      </div>
+    </div>
+
+    <div class="status-bar">
+      <div class="status-dot" id="statusDot"></div>
+      <span id="statusText">Idle</span>
+    </div>
+  </div>
+</div>
+
+<script>
+  let currentOrient = 'landscape';
+  let currentJobId = null;
+
+  function setOrient(orient) {
+    currentOrient = orient;
+    document.querySelectorAll('.orient-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.orient === orient);
+    });
+  }
+
+  function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.id === `panel-${tab}`));
+    if (tab === 'videos') loadVideos();
+    if (tab === 'screenshots') loadScreenshots();
+  }
+
+  function setStatus(state, text) {
+    const dot = document.getElementById('statusDot');
+    const txt = document.getElementById('statusText');
+    dot.className = 'status-dot ' + state;
+    txt.textContent = text;
+  }
+
+  async function startGeneration() {
+    const url = document.getElementById('url').value.trim();
+    if (!url) { document.getElementById('url').focus(); return; }
+
+    const btn = document.getElementById('generateBtn');
+    btn.disabled = true;
+    btn.classList.add('running');
+    btn.textContent = 'Running...';
+
+    // Clear logs
+    const terminal = document.getElementById('logTerminal');
+    terminal.innerHTML = '';
+
+    switchTab('logs');
+    setStatus('running', 'Generating...');
+
+    const params = {
+      url,
+      task: document.getElementById('task').value.trim() || undefined,
+      login_url: document.getElementById('login_url').value.trim() || undefined,
+      username: document.getElementById('username').value.trim() || undefined,
+      password: document.getElementById('password').value || undefined,
+      landscape: currentOrient === 'landscape',
+      scenes: parseInt(document.getElementById('scenes').value) || 5,
+      duration: parseFloat(document.getElementById('duration').value) || 4.0,
+      headless: document.getElementById('headless').checked,
+    };
+
+    try {
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+      const data = await res.json();
+      currentJobId = data.job_id;
+
+      // Start log stream
+      streamLogs(data.job_id);
+    } catch (e) {
+      addLog('ERROR', 'Failed to start: ' + e.message);
+      resetBtn();
+      setStatus('error', 'Failed');
+    }
+  }
+
+  function streamLogs(jobId) {
+    const evtSource = new EventSource(`/api/jobs/${jobId}/logs`);
+
+    evtSource.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data._ping) return;
+      if (data._done) {
+        evtSource.close();
+        checkJobResult(jobId);
+        return;
+      }
+      addLog(data.level, data.message);
+    };
+
+    evtSource.onerror = () => {
+      evtSource.close();
+      checkJobResult(jobId);
+    };
+  }
+
+  async function checkJobResult(jobId) {
+    try {
+      const res = await fetch(`/api/jobs/${jobId}`);
+      const job = await res.json();
+      if (job.status === 'done') {
+        setStatus('done', 'Complete');
+        addLog('INFO', 'Video ready: ' + job.output);
+        loadVideos();
+        loadScreenshots();
+      } else if (job.status === 'error') {
+        setStatus('error', 'Error');
+        addLog('ERROR', job.error || 'Unknown error');
+      }
+    } catch (e) {
+      setStatus('error', 'Connection lost');
+    }
+    resetBtn();
+  }
+
+  function addLog(level, message) {
+    const terminal = document.getElementById('logTerminal');
+    // Remove empty state
+    const empty = terminal.querySelector('.log-empty');
+    if (empty) empty.remove();
+
+    const now = new Date().toLocaleTimeString('en-US', { hour12: false });
+    const line = document.createElement('div');
+    line.className = 'log-line';
+    line.innerHTML = `
+      <span class="log-time">${now}</span>
+      <span class="log-level ${level}">${level}</span>
+      <span class="log-msg">${escapeHtml(message)}</span>
+    `;
+    terminal.appendChild(line);
+    terminal.scrollTop = terminal.scrollHeight;
+  }
+
+  function resetBtn() {
+    const btn = document.getElementById('generateBtn');
+    btn.disabled = false;
+    btn.classList.remove('running');
+    btn.textContent = 'Generate Video';
+  }
+
+  async function loadVideos() {
+    const gallery = document.getElementById('videoGallery');
+    try {
+      const res = await fetch('/api/videos');
+      const videos = await res.json();
+      if (videos.length === 0) {
+        gallery.innerHTML = '<div class="gallery-empty">No videos generated yet</div>';
+        return;
+      }
+      gallery.innerHTML = '<div class="gallery-grid">' + videos.map(v => `
+        <div class="video-card">
+          <video controls preload="metadata" src="${v.url}"></video>
+          <div class="video-card-info">
+            <span class="video-card-name">${escapeHtml(v.name)}</span>
+            <span class="video-card-size">${formatSize(v.size)}</span>
+          </div>
+        </div>
+      `).join('') + '</div>';
+    } catch (e) {
+      gallery.innerHTML = '<div class="gallery-empty">Failed to load videos</div>';
+    }
+  }
+
+  async function loadScreenshots() {
+    const grid = document.getElementById('screenshotGrid');
+    try {
+      const res = await fetch('/api/screenshots');
+      const shots = await res.json();
+      if (shots.length === 0) {
+        grid.innerHTML = '<div class="gallery-empty">No screenshots from last run</div>';
+        return;
+      }
+      grid.innerHTML = shots.map(s => `
+        <div class="screenshot-card">
+          <img src="${s.url}" loading="lazy" alt="${escapeHtml(s.name)}" />
+          <div class="name">${escapeHtml(s.name)}</div>
+        </div>
+      `).join('');
+    } catch (e) {
+      grid.innerHTML = '<div class="gallery-empty">Failed to load screenshots</div>';
+    }
+  }
+
+  function formatSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+
+  function escapeHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  // Load videos on startup
+  loadVideos();
+</script>
+</body>
+</html>

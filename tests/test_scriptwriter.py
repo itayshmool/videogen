@@ -96,30 +96,6 @@ class TestGenerateScript:
         assert script.scenes[0].screenshot_path == browse_result.screenshots[2]
 
     @pytest.mark.asyncio
-    async def test_strips_markdown_fences(self, browse_result, config):
-        """LLM output wrapped in ```json fences should be handled."""
-        raw_json = json.dumps({
-            "product_name": "Test",
-            "hook": "Hook",
-            "scenes": [],
-            "cta": "CTA",
-        })
-        fenced = f"```json\n{raw_json}\n```"
-
-        response = MagicMock()
-        response.text = fenced
-
-        with patch("videogen.scriptwriter.genai") as mock_genai:
-            mock_client = MagicMock()
-            mock_client.aio.models.generate_content = AsyncMock(return_value=response)
-            mock_genai.Client.return_value = mock_client
-
-            with patch.dict("os.environ", {"GOOGLE_API_KEY": "fake-key"}):
-                script = await generate_script(browse_result, config)
-
-        assert script.product_name == "Test"
-
-    @pytest.mark.asyncio
     async def test_missing_api_key_raises(self, browse_result, config):
         """Should raise ValueError if GOOGLE_API_KEY is not set."""
         with patch.dict("os.environ", {}, clear=True):

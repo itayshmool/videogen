@@ -13,3 +13,5 @@ output/*.png
 .tmp/
 .browser-profile/
 *.log
+.DS_Store
+*.swp

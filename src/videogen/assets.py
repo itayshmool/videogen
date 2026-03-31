@@ -63,6 +63,21 @@ def crop_to_vertical(img: Image.Image, width: int, height: int) -> Image.Image:
     return img.resize((width, height), Image.LANCZOS)
 
 
+def fit_to_frame(img: Image.Image, width: int, height: int) -> Image.Image:
+    """Resize image to fit within frame without cropping, letterbox with dark background."""
+    bg = Image.new("RGB", (width, height), (15, 15, 20))
+
+    scale = min(width / img.width, height / img.height)
+    new_w = int(img.width * scale)
+    new_h = int(img.height * scale)
+    resized = img.resize((new_w, new_h), Image.LANCZOS)
+
+    x = (width - new_w) // 2
+    y = (height - new_h) // 2
+    bg.paste(resized, (x, y))
+    return bg
+
+
 def _draw_text_with_background(
     draw: ImageDraw.ImageDraw,
     text: str,
@@ -130,9 +145,12 @@ def create_scene_frame(
     config: VideoConfig,
     font_path: Path | None = None,
 ) -> Image.Image:
-    """Create a single scene frame: cropped screenshot + text overlay."""
+    """Create a single scene frame: screenshot + text overlay."""
     img = Image.open(screenshot_path).convert("RGBA")
-    img = crop_to_vertical(img, config.width, config.height)
+    if config.crop:
+        img = crop_to_vertical(img, config.width, config.height)
+    else:
+        img = fit_to_frame(img, config.width, config.height).convert("RGBA")
 
     overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
     draw = ImageDraw.Draw(overlay)

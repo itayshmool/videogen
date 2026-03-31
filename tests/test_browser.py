@@ -7,6 +7,7 @@ import pytest
 
 from videogen.browser import (
     BROWSE_TASK,
+    LOGIN_TASK_PREFIX,
     ProductInfo,
     _make_login_pause_callback,
     browse_product,
@@ -226,6 +227,125 @@ class TestBrowseProductOutputParsing:
 
         assert result.product_name == ""
         assert result.url == "https://example.com"
+
+
+# ---------------------------------------------------------------------------
+# browse_product — automated login
+# ---------------------------------------------------------------------------
+
+
+AUTO_LOGIN_KWARGS = dict(
+    login_url="https://example.com/login",
+    username="user@test.com",
+    password="secret123",
+)
+
+
+class TestBrowseProductAutoLogin:
+    @pytest.mark.asyncio
+    async def test_prepends_login_instructions_to_task(self, tmp_path):
+        agent_kwargs = {}
+
+        with patch(BROWSE_PATCHES["agent"]) as MockAgent, \
+             patch(BROWSE_PATCHES["llm"], return_value=MagicMock()), \
+             patch(BROWSE_PATCHES["profile"], return_value=MagicMock()), \
+             patch(BROWSE_PATCHES["tools"], return_value=MagicMock()), \
+             patch(BROWSE_PATCHES["session"], return_value=_mock_session()):
+            MockAgent.side_effect = lambda **kw: (agent_kwargs.update(kw), _mock_agent())[1]
+
+            await browse_product("https://example.com", profile_dir=tmp_path, **AUTO_LOGIN_KWARGS)
+
+        assert "https://example.com/login" in agent_kwargs["task"]
+        assert "x_username" in agent_kwargs["task"]
+        assert "x_password" in agent_kwargs["task"]
+        # Also contains the normal browse task
+        assert "Analyze the product page at https://example.com" in agent_kwargs["task"]
+
+    @pytest.mark.asyncio
+    async def test_passes_sensitive_data_to_agent(self, tmp_path):
+        agent_kwargs = {}
+
+        with patch(BROWSE_PATCHES["agent"]) as MockAgent, \
+             patch(BROWSE_PATCHES["llm"], return_value=MagicMock()), \
+             patch(BROWSE_PATCHES["profile"], return_value=MagicMock()), \
+             patch(BROWSE_PATCHES["tools"], return_value=MagicMock()), \
+             patch(BROWSE_PATCHES["session"], return_value=_mock_session()):
+            MockAgent.side_effect = lambda **kw: (agent_kwargs.update(kw), _mock_agent())[1]
+
+            await browse_product("https://example.com", profile_dir=tmp_path, **AUTO_LOGIN_KWARGS)
+
+        assert agent_kwargs["sensitive_data"] == {
+            "x_username": "user@test.com",
+            "x_password": "secret123",
+        }
+
+    @pytest.mark.asyncio
+    async def test_does_not_set_step_callback(self, tmp_path):
+        agent_kwargs = {}
+
+        with patch(BROWSE_PATCHES["agent"]) as MockAgent, \
+             patch(BROWSE_PATCHES["llm"], return_value=MagicMock()), \
+             patch(BROWSE_PATCHES["profile"], return_value=MagicMock()), \
+             patch(BROWSE_PATCHES["tools"], return_value=MagicMock()), \
+             patch(BROWSE_PATCHES["session"], return_value=_mock_session()):
+            MockAgent.side_effect = lambda **kw: (agent_kwargs.update(kw), _mock_agent())[1]
+
+            await browse_product("https://example.com", profile_dir=tmp_path, **AUTO_LOGIN_KWARGS)
+
+        assert agent_kwargs["register_new_step_callback"] is None
+
+    @pytest.mark.asyncio
+    async def test_respects_headless_flag(self, tmp_path):
+        profile_kwargs = {}
+
+        with patch(BROWSE_PATCHES["agent"], return_value=_mock_agent()), \
+             patch(BROWSE_PATCHES["llm"], return_value=MagicMock()), \
+             patch(BROWSE_PATCHES["profile"]) as MockProfile, \
+             patch(BROWSE_PATCHES["tools"], return_value=MagicMock()), \
+             patch(BROWSE_PATCHES["session"], return_value=_mock_session()):
+            MockProfile.side_effect = lambda **kw: (profile_kwargs.update(kw), MagicMock())[1]
+
+            await browse_product(
+                "https://example.com", headless=True, profile_dir=tmp_path, **AUTO_LOGIN_KWARGS,
+            )
+
+        assert profile_kwargs["headless"] is True
+
+    @pytest.mark.asyncio
+    async def test_manual_login_still_works_without_credentials(self, tmp_path):
+        agent_kwargs = {}
+
+        with patch(BROWSE_PATCHES["agent"]) as MockAgent, \
+             patch(BROWSE_PATCHES["llm"], return_value=MagicMock()), \
+             patch(BROWSE_PATCHES["profile"], return_value=MagicMock()), \
+             patch(BROWSE_PATCHES["tools"], return_value=MagicMock()), \
+             patch(BROWSE_PATCHES["session"], return_value=_mock_session()):
+            MockAgent.side_effect = lambda **kw: (agent_kwargs.update(kw), _mock_agent())[1]
+
+            await browse_product("https://example.com", login=True, profile_dir=tmp_path)
+
+        assert agent_kwargs["register_new_step_callback"] is not None
+        assert agent_kwargs["sensitive_data"] is None
+
+    @pytest.mark.asyncio
+    async def test_no_credentials_means_no_sensitive_data(self, tmp_path):
+        agent_kwargs = {}
+
+        with patch(BROWSE_PATCHES["agent"]) as MockAgent, \
+             patch(BROWSE_PATCHES["llm"], return_value=MagicMock()), \
+             patch(BROWSE_PATCHES["profile"], return_value=MagicMock()), \
+             patch(BROWSE_PATCHES["tools"], return_value=MagicMock()), \
+             patch(BROWSE_PATCHES["session"], return_value=_mock_session()):
+            MockAgent.side_effect = lambda **kw: (agent_kwargs.update(kw), _mock_agent())[1]
+
+            await browse_product("https://example.com", profile_dir=tmp_path)
+
+        assert agent_kwargs["sensitive_data"] is None
+
+    def test_login_task_prefix_has_expected_placeholders(self):
+        assert "{login_url}" in LOGIN_TASK_PREFIX
+        assert "x_username" in LOGIN_TASK_PREFIX
+        assert "x_password" in LOGIN_TASK_PREFIX
 
 
 # ---------------------------------------------------------------------------

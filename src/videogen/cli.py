@@ -33,6 +33,11 @@ async def _run_pipeline(
     login: bool,
     keep_tmp: bool,
     profile_dir: Path = PROFILE_DIR,
+    login_url: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
+    custom_task: str | None = None,
+    landscape: bool = False,
 ) -> Path:
     from videogen.assets import prepare_assets
     from videogen.browser import browse_product
@@ -41,16 +46,26 @@ async def _run_pipeline(
     from videogen.scriptwriter import generate_script
 
     config = VideoConfig(
+        width=1920 if landscape else 1080,
+        height=1080 if landscape else 1920,
         max_scenes=max_scenes,
         scene_duration=scene_duration,
         music_path=music,
         output_dir=output_dir,
+        crop=not landscape,
     )
 
     # Step 1: Browse
     logger.info("Browsing %s ...", url)
     browse_result = await browse_product(
-        url, headless=headless, login=login, profile_dir=profile_dir,
+        url,
+        headless=headless,
+        login=login,
+        profile_dir=profile_dir,
+        login_url=login_url,
+        username=username,
+        password=password,
+        custom_task=custom_task,
     )
     logger.info(
         "Captured %d screenshots for '%s'",
@@ -92,10 +107,24 @@ def generate(
     login: bool = typer.Option(False, "--login", "-l", help="Pause for manual login before capturing"),
     profile_dir: Path = typer.Option(PROFILE_DIR, "--profile", "-p", help="Browser profile directory (persists login sessions)"),
     keep_tmp: bool = typer.Option(False, "--keep-tmp", help="Keep temp files after generation"),
+    login_url: str | None = typer.Option(None, "--login-url", help="Login page URL (enables automated login)"),
+    username: str | None = typer.Option(None, "--username", "-u", help="Username/email for automated login"),
+    password: str | None = typer.Option(None, "--password", help="Password for automated login"),
+    task: str | None = typer.Option(None, "--task", "-t", help="Custom browsing instructions for the agent"),
+    landscape: bool = typer.Option(False, "--landscape", help="Landscape mode (1920x1080) — full screenshots without cropping"),
 ) -> None:
     """Generate a social video clip from a product page URL."""
+    creds = [login_url, username, password]
+    if any(creds) and not all(creds):
+        typer.echo("Error: --login-url, --username, and --password must all be provided together.", err=True)
+        raise typer.Exit(1)
+
     output_path = asyncio.run(
-        _run_pipeline(url, scenes, duration, music, output_dir, headless, login, keep_tmp, profile_dir)
+        _run_pipeline(
+            url, scenes, duration, music, output_dir, headless, login, keep_tmp, profile_dir,
+            login_url=login_url, username=username, password=password, custom_task=task,
+            landscape=landscape,
+        )
     )
     typer.echo(f"\nVideo: {output_path}")
 
