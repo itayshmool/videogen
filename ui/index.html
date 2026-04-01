@@ -540,6 +540,79 @@
     50% { opacity: 0.3; }
   }
 
+  /* Run history list */
+  .run-list {
+    max-height: 340px;
+    overflow-y: auto;
+  }
+
+  .run-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+
+  .run-item:hover { border-color: var(--border-focus); }
+  .run-item.active {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+  }
+
+  .run-item-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    overflow: hidden;
+  }
+
+  .run-item-id { color: var(--text-primary); font-weight: 500; }
+  .run-item-product {
+    color: var(--text-secondary);
+    font-size: 10px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .run-status {
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .run-status.done { background: rgba(61,220,132,0.15); color: var(--success); }
+  .run-status.running { background: var(--accent-glow); color: var(--accent); }
+  .run-status.error { background: rgba(255,85,85,0.15); color: var(--error); }
+
+  .reuse-btn {
+    width: 100%;
+    padding: 8px;
+    margin-top: 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-input);
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+  }
+
+  .reuse-btn:hover {
+    border-color: var(--border-focus);
+    color: var(--text-primary);
+  }
+
   /* Scrollbar */
   ::-webkit-scrollbar { width: 6px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -640,6 +713,13 @@
       </button>
     </div>
 
+    <div class="section">
+      <div class="section-header">History</div>
+      <div class="run-list" id="runList">
+        <div class="gallery-empty" style="font-size:11px">No runs yet</div>
+      </div>
+    </div>
+
   </aside>
 
   <!-- Content area -->
@@ -681,6 +761,7 @@
 <script>
   let currentOrient = 'landscape';
   let currentJobId = null;
+  let currentRunId = null;
 
   function setOrient(orient) {
     currentOrient = orient;
@@ -776,11 +857,19 @@
       if (job.status === 'done') {
         setStatus('done', 'Complete');
         addLog('INFO', 'Video ready: ' + job.output);
-        loadVideos();
-        loadScreenshots();
+        // Auto-select the new run
+        if (job.run_id) {
+          currentRunId = job.run_id;
+          await loadRuns();
+          await selectRun(job.run_id);
+        } else {
+          loadVideos();
+          loadScreenshots();
+        }
       } else if (job.status === 'error') {
         setStatus('error', 'Error');
         addLog('ERROR', job.error || 'Unknown error');
+        await loadRuns();
       }
     } catch (e) {
       setStatus('error', 'Connection lost');
@@ -813,6 +902,113 @@
     btn.textContent = 'Generate Video';
   }
 
+  // --- Run management ---
+
+  async function loadRuns() {
+    const list = document.getElementById('runList');
+    try {
+      const res = await fetch('/api/runs');
+      const runs = await res.json();
+      if (runs.length === 0) {
+        list.innerHTML = '<div class="gallery-empty" style="font-size:11px">No runs yet</div>';
+        return;
+      }
+      list.innerHTML = runs.map(r => {
+        const safeId = escapeHtml(r.run_id);
+        const safeStatus = escapeHtml(r.status);
+        return `
+        <div class="run-item ${r.run_id === currentRunId ? 'active' : ''}"
+             onclick="selectRun('${safeId}')">
+          <div class="run-item-info">
+            <span class="run-item-id">${formatRunId(safeId)}</span>
+            <span class="run-item-product">${escapeHtml(r.product_name || r.url || '')}</span>
+          </div>
+          <span class="run-status ${safeStatus}">${safeStatus}</span>
+        </div>`;
+      }).join('');
+    } catch (e) {
+      list.innerHTML = '<div class="gallery-empty" style="font-size:11px">Failed to load</div>';
+    }
+  }
+
+  function formatRunId(id) {
+    if (id.length === 15 && id[8] === '_') {
+      return id.slice(0,4) + '-' + id.slice(4,6) + '-' + id.slice(6,8) + ' '
+           + id.slice(9,11) + ':' + id.slice(11,13) + ':' + id.slice(13,15);
+    }
+    return id;
+  }
+
+  async function selectRun(runId) {
+    currentRunId = runId;
+    // Update active state in list
+    document.querySelectorAll('.run-item').forEach(el => {
+      const idSpan = el.querySelector('.run-item-id');
+      el.classList.toggle('active', idSpan && idSpan.textContent === formatRunId(runId));
+    });
+    // Load run-specific content
+    await Promise.all([loadRunScreenshots(runId), loadRunVideo(runId)]);
+    // Load run config for reuse
+    await loadRunConfig(runId);
+  }
+
+  async function loadRunScreenshots(runId) {
+    const grid = document.getElementById('screenshotGrid');
+    try {
+      const res = await fetch(`/api/runs/${runId}/screenshots`);
+      const shots = await res.json();
+      if (shots.length === 0) {
+        grid.innerHTML = '<div class="gallery-empty">No screenshots</div>';
+        return;
+      }
+      grid.innerHTML = shots.map(s => `
+        <div class="screenshot-card">
+          <img src="${s.url}" loading="lazy" alt="${escapeHtml(s.name)}" />
+          <div class="name">${escapeHtml(s.name)}</div>
+        </div>
+      `).join('');
+    } catch (e) {
+      grid.innerHTML = '<div class="gallery-empty">Failed to load screenshots</div>';
+    }
+  }
+
+  async function loadRunVideo(runId) {
+    const gallery = document.getElementById('videoGallery');
+    try {
+      const res = await fetch(`/api/runs/${runId}/video`);
+      const v = await res.json();
+      if (v.error) {
+        gallery.innerHTML = '<div class="gallery-empty">No video for this run</div>';
+        return;
+      }
+      gallery.innerHTML = '<div class="gallery-grid"><div class="video-card">' +
+        `<video controls preload="metadata" src="${v.url}"></video>` +
+        '<div class="video-card-info">' +
+        `<span class="video-card-name">${escapeHtml(v.name)}</span>` +
+        `<span class="video-card-size">${formatSize(v.size)}</span>` +
+        '</div></div></div>';
+    } catch (e) {
+      gallery.innerHTML = '<div class="gallery-empty">Failed to load video</div>';
+    }
+  }
+
+  async function loadRunConfig(runId) {
+    try {
+      const res = await fetch(`/api/runs/${runId}`);
+      const run = await res.json();
+      if (run.error) return;
+      // Pre-fill form with this run's config for easy re-run
+      if (run.url) document.getElementById('url').value = run.url;
+      const cfg = run.config || {};
+      if (cfg.login_url) document.getElementById('login_url').value = cfg.login_url;
+      if (cfg.task) document.getElementById('task').value = cfg.task;
+      if (cfg.max_scenes) document.getElementById('scenes').value = cfg.max_scenes;
+      if (cfg.scene_duration) document.getElementById('duration').value = cfg.scene_duration;
+      if (cfg.landscape !== undefined) setOrient(cfg.landscape ? 'landscape' : 'vertical');
+      if (cfg.headless !== undefined) document.getElementById('headless').checked = cfg.headless;
+    } catch (e) { /* ignore */ }
+  }
+
   async function loadVideos() {
     const gallery = document.getElementById('videoGallery');
     try {
@@ -837,12 +1033,15 @@
   }
 
   async function loadScreenshots() {
+    if (currentRunId) {
+      return loadRunScreenshots(currentRunId);
+    }
     const grid = document.getElementById('screenshotGrid');
     try {
       const res = await fetch('/api/screenshots');
       const shots = await res.json();
       if (shots.length === 0) {
-        grid.innerHTML = '<div class="gallery-empty">No screenshots from last run</div>';
+        grid.innerHTML = '<div class="gallery-empty">No screenshots yet</div>';
         return;
       }
       grid.innerHTML = shots.map(s => `
@@ -868,8 +1067,9 @@
     return d.innerHTML;
   }
 
-  // Load videos on startup
+  // Load data on startup
   loadVideos();
+  loadRuns();
 </script>
 </body>
 </html>

@@ -10,6 +10,7 @@ build/
 venv/
 output/*.mp4
 output/*.png
+output/runs/
 .tmp/
 .browser-profile/
 *.log

@@ -115,6 +115,7 @@ async def browse_product(
     username: str | None = None,
     password: str | None = None,
     custom_task: str | None = None,
+    screenshots_dir: Path | None = None,
 ) -> BrowseResult:
     """Browse a product URL and capture screenshots of key sections.
 
@@ -131,7 +132,8 @@ async def browse_product(
         profile_dir = PROFILE_DIR
     profile_dir.mkdir(parents=True, exist_ok=True)
 
-    screenshots_dir = TMP_DIR / "screenshots"
+    if screenshots_dir is None:
+        screenshots_dir = TMP_DIR / "screenshots"
     screenshots_dir.mkdir(parents=True, exist_ok=True)
 
     screenshot_paths: list[Path] = []

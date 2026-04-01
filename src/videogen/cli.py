@@ -2,12 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import shutil
+from datetime import datetime, timezone
 from pathlib import Path
 
 import typer
 
-from videogen.config import OUTPUT_DIR, PROFILE_DIR, TMP_DIR
+from videogen.config import OUTPUT_DIR, PROFILE_DIR, create_run_dir
 
 app = typer.Typer(
     name="videogen",
@@ -23,6 +23,11 @@ logging.basicConfig(
 logger = logging.getLogger("videogen")
 
 
+def _write_manifest(run_dir: Path, manifest) -> None:
+    """Write run.json to the run directory."""
+    (run_dir / "run.json").write_text(manifest.model_dump_json(indent=2))
+
+
 async def _run_pipeline(
     url: str,
     max_scenes: int,
@@ -31,19 +36,24 @@ async def _run_pipeline(
     output_dir: Path,
     headless: bool,
     login: bool,
-    keep_tmp: bool,
     profile_dir: Path = PROFILE_DIR,
     login_url: str | None = None,
     username: str | None = None,
     password: str | None = None,
     custom_task: str | None = None,
     landscape: bool = False,
+    run_id: str | None = None,
 ) -> Path:
     from videogen.assets import prepare_assets
     from videogen.browser import browse_product
     from videogen.composer import compose_video
-    from videogen.models import VideoConfig
+    from videogen.models import RunManifest, RunStatus, VideoConfig
     from videogen.scriptwriter import generate_script
+
+    # Create run directory
+    run_dir = create_run_dir(run_id)
+    actual_run_id = run_dir.name
+    logger.info("Run %s started", actual_run_id)
 
     config = VideoConfig(
         width=1920 if landscape else 1080,
@@ -51,49 +61,79 @@ async def _run_pipeline(
         max_scenes=max_scenes,
         scene_duration=scene_duration,
         music_path=music,
-        output_dir=output_dir,
+        output_dir=run_dir,
         crop=not landscape,
     )
 
-    # Step 1: Browse
-    logger.info("Browsing %s ...", url)
-    browse_result = await browse_product(
-        url,
-        headless=headless,
-        login=login,
-        profile_dir=profile_dir,
-        login_url=login_url,
-        username=username,
-        password=password,
-        custom_task=custom_task,
+    manifest = RunManifest(
+        run_id=actual_run_id,
+        url=url,
+        created_at=datetime.now(timezone.utc).isoformat(),
+        config={
+            "width": config.width,
+            "height": config.height,
+            "max_scenes": config.max_scenes,
+            "scene_duration": config.scene_duration,
+            "landscape": landscape,
+            "headless": headless,
+            "login_url": login_url,
+            "task": custom_task,
+        },
     )
-    logger.info(
-        "Captured %d screenshots for '%s'",
-        len(browse_result.screenshots),
-        browse_result.product_name or url,
-    )
+    _write_manifest(run_dir, manifest)
 
-    # Step 2: Generate script
-    logger.info("Generating video script ...")
-    script = await generate_script(browse_result, config)
-    logger.info("Script: hook='%s', %d scenes, cta='%s'", script.hook, len(script.scenes), script.cta)
+    try:
+        # Step 1: Browse
+        logger.info("Browsing %s ...", url)
+        browse_result = await browse_product(
+            url,
+            headless=headless,
+            login=login,
+            profile_dir=profile_dir,
+            login_url=login_url,
+            username=username,
+            password=password,
+            custom_task=custom_task,
+            screenshots_dir=run_dir / "screenshots",
+        )
+        logger.info(
+            "Captured %d screenshots for '%s'",
+            len(browse_result.screenshots),
+            browse_result.product_name or url,
+        )
 
-    # Step 3: Prepare frame assets
-    logger.info("Preparing frame assets ...")
-    frame_paths = prepare_assets(script, config)
-    logger.info("Generated %d frame images", len(frame_paths))
+        # Step 2: Generate script
+        logger.info("Generating video script ...")
+        script = await generate_script(browse_result, config)
+        logger.info("Script: hook='%s', %d scenes, cta='%s'", script.hook, len(script.scenes), script.cta)
 
-    # Step 4: Compose video
-    logger.info("Composing final video ...")
-    output_path = compose_video(script, frame_paths, config)
-    logger.info("Done! Video saved to: %s", output_path)
+        # Step 3: Prepare frame assets
+        logger.info("Preparing frame assets ...")
+        frame_paths = prepare_assets(script, config, frames_dir=run_dir / "frames")
+        logger.info("Generated %d frame images", len(frame_paths))
 
-    # Cleanup
-    if not keep_tmp and TMP_DIR.exists():
-        shutil.rmtree(TMP_DIR)
-        logger.info("Cleaned up temp files")
+        # Step 4: Compose video
+        logger.info("Composing final video ...")
+        output_path = compose_video(script, frame_paths, config)
+        logger.info("Done! Video saved to: %s", output_path)
 
-    return output_path
+        # Update manifest on success
+        manifest.status = RunStatus.DONE
+        manifest.finished_at = datetime.now(timezone.utc).isoformat()
+        manifest.product_name = script.product_name
+        manifest.hook = script.hook
+        manifest.cta = script.cta
+        manifest.scenes_count = len(script.scenes)
+        _write_manifest(run_dir, manifest)
+
+        return output_path
+
+    except Exception as e:
+        manifest.status = RunStatus.ERROR
+        manifest.finished_at = datetime.now(timezone.utc).isoformat()
+        manifest.error = str(e)
+        _write_manifest(run_dir, manifest)
+        raise
 
 
 @app.command()
@@ -106,7 +146,6 @@ def generate(
     headless: bool = typer.Option(True, "--headless/--no-headless", help="Run browser headlessly"),
     login: bool = typer.Option(False, "--login", "-l", help="Pause for manual login before capturing"),
     profile_dir: Path = typer.Option(PROFILE_DIR, "--profile", "-p", help="Browser profile directory (persists login sessions)"),
-    keep_tmp: bool = typer.Option(False, "--keep-tmp", help="Keep temp files after generation"),
     login_url: str | None = typer.Option(None, "--login-url", help="Login page URL (enables automated login)"),
     username: str | None = typer.Option(None, "--username", "-u", help="Username/email for automated login"),
     password: str | None = typer.Option(None, "--password", help="Password for automated login"),
@@ -121,7 +160,7 @@ def generate(
 
     output_path = asyncio.run(
         _run_pipeline(
-            url, scenes, duration, music, output_dir, headless, login, keep_tmp, profile_dir,
+            url, scenes, duration, music, output_dir, headless, login, profile_dir,
             login_url=login_url, username=username, password=password, custom_task=task,
             landscape=landscape,
         )

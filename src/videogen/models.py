@@ -54,3 +54,23 @@ class BrowseResult(BaseModel):
     features: list[str] = Field(default_factory=list)
     screenshots: list[Path] = Field(default_factory=list)
     url: str = ""
+
+
+class RunStatus(str, Enum):
+    RUNNING = "running"
+    DONE = "done"
+    ERROR = "error"
+
+
+class RunManifest(BaseModel):
+    run_id: str
+    url: str
+    status: RunStatus = RunStatus.RUNNING
+    created_at: str
+    finished_at: str | None = None
+    config: dict = Field(default_factory=dict)
+    product_name: str = ""
+    hook: str = ""
+    cta: str = ""
+    scenes_count: int = 0
+    error: str | None = None

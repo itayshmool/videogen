@@ -4,7 +4,6 @@ import logging
 import subprocess
 from pathlib import Path
 
-from videogen.config import OUTPUT_DIR
 from videogen.models import KenBurnsDirection, VideoConfig, VideoScript
 
 logger = logging.getLogger(__name__)
@@ -38,11 +37,10 @@ def compose_video(
     1. Generate individual scene clips with Ken Burns effect
     2. Concatenate with crossfade transitions
     """
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    config.output_dir.mkdir(parents=True, exist_ok=True)
 
     if output_name is None:
-        safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in script.product_name)
-        output_name = f"{safe_name}_video.mp4"
+        output_name = "video.mp4"
 
     output_path = config.output_dir / output_name
     config.output_dir.mkdir(parents=True, exist_ok=True)

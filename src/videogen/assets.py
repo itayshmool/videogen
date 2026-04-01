@@ -226,9 +226,14 @@ def create_cta_frame(
     return img
 
 
-def prepare_assets(script: VideoScript, config: VideoConfig) -> list[Path]:
+def prepare_assets(
+    script: VideoScript,
+    config: VideoConfig,
+    frames_dir: Path | None = None,
+) -> list[Path]:
     """Generate all frame images for the video. Returns ordered list of frame paths."""
-    frames_dir = TMP_DIR / "frames"
+    if frames_dir is None:
+        frames_dir = TMP_DIR / "frames"
     frames_dir.mkdir(parents=True, exist_ok=True)
 
     frame_paths: list[Path] = []
