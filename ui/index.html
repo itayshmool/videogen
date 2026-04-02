@@ -364,6 +364,7 @@
     gap: 8px;
     opacity: 0;
     animation: log-in 0.2s ease forwards;
+    flex-wrap: wrap;
   }
 
   @keyframes log-in {
@@ -388,7 +389,7 @@
   .log-level.WARNING { color: var(--warning); }
   .log-level.ERROR { color: var(--error); }
 
-  .log-msg { color: var(--text-primary); word-break: break-all; }
+  .log-msg { color: var(--text-primary); word-break: break-word; min-width: 0; flex: 1; }
 
   .log-empty {
     display: flex;
@@ -403,6 +404,45 @@
   }
 
   .log-empty .hint { font-size: 11px; opacity: 0.6; }
+
+  /* Log filter bar */
+  .log-filters {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-surface);
+    flex-shrink: 0;
+  }
+
+  .log-filter-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-right: 4px;
+  }
+
+  .log-filter-btn {
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-input);
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s, color 0.2s;
+  }
+
+  .log-filter-btn:hover { border-color: var(--border-focus); }
+  .log-filter-btn.active {
+    border-color: var(--accent);
+    background: var(--accent-glow);
+    color: var(--text-primary);
+  }
 
   /* Video gallery */
   .gallery {
@@ -731,6 +771,13 @@
     </div>
 
     <div class="tab-panel active" id="panel-logs">
+      <div class="log-filters">
+        <span class="log-filter-label">Level</span>
+        <button class="log-filter-btn active" data-level="ALL" onclick="setLogFilter('ALL')">All</button>
+        <button class="log-filter-btn" data-level="INFO" onclick="setLogFilter('INFO')">Info</button>
+        <button class="log-filter-btn" data-level="WARNING" onclick="setLogFilter('WARNING')">Warn</button>
+        <button class="log-filter-btn" data-level="ERROR" onclick="setLogFilter('ERROR')">Error</button>
+      </div>
       <div class="log-terminal" id="logTerminal">
         <div class="log-empty">
           <span>No active generation</span>
@@ -877,6 +924,22 @@
     resetBtn();
   }
 
+  let activeLogFilter = 'ALL';
+
+  function setLogFilter(level) {
+    activeLogFilter = level;
+    document.querySelectorAll('.log-filter-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.level === level);
+    });
+    document.querySelectorAll('.log-line').forEach(line => {
+      if (level === 'ALL' || line.dataset.level === level) {
+        line.style.display = '';
+      } else {
+        line.style.display = 'none';
+      }
+    });
+  }
+
   function addLog(level, message) {
     const terminal = document.getElementById('logTerminal');
     // Remove empty state
@@ -886,11 +949,15 @@
     const now = new Date().toLocaleTimeString('en-US', { hour12: false });
     const line = document.createElement('div');
     line.className = 'log-line';
+    line.dataset.level = level;
     line.innerHTML = `
       <span class="log-time">${now}</span>
       <span class="log-level ${level}">${level}</span>
       <span class="log-msg">${escapeHtml(message)}</span>
     `;
+    if (activeLogFilter !== 'ALL' && level !== activeLogFilter) {
+      line.style.display = 'none';
+    }
     terminal.appendChild(line);
     terminal.scrollTop = terminal.scrollHeight;
   }
